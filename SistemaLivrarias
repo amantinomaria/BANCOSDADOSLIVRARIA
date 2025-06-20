@@ -1,0 +1,1071 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+import mysql.connector
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
+
+class TelaLogin(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Login - Sistema da Livraria")
+        self.geometry("300x250")
+        self.resizable(False, False)
+        self.configure(bg="#f5f5f5")
+
+        tk.Label(self, text="Usuário:", bg="#f5f5f5").pack(pady=(20, 5))
+        self.usuario_entry = tk.Entry(self)
+        self.usuario_entry.pack()
+
+        tk.Label(self, text="Senha:", bg="#f5f5f5").pack(pady=(10, 5))
+        self.senha_entry = tk.Entry(self, show="*")
+        self.senha_entry.pack()
+
+        tk.Label(self, text="Tipo de Usuário:", bg="#f5f5f5").pack(pady=(10, 5))
+        self.tipo_usuario = ttk.Combobox(self, values=["Administrador", "Estoquista", "Caixa"], state="readonly")
+        self.tipo_usuario.pack()
+        
+        tk.Button(self, text="Entrar", command=self.verificar_login).pack(pady=20)
+
+    def verificar_login(self):
+        usuario = self.usuario_entry.get()
+        senha = self.senha_entry.get()
+        tipo = self.tipo_usuario.get()
+        
+        #SIMULAÇÃO DE USUÁRIOS
+        usuarios = {
+            "admin": {"senha": "123", "tipo": "Administrador"},
+            "estoque": {"senha": "456", "tipo": "Estoquista"},
+            "caixa": {"senha": "789", "tipo": "Caixa"}
+        }
+
+        if usuario in usuarios and senha == usuarios[usuario]["senha"] and tipo == usuarios[usuario]["tipo"]:
+            self.destroy()
+            app = SistemaLivraria(tipo_usuario=tipo)
+            app.mainloop()
+        else:
+            messagebox.showerror("Erro", "Credenciais inválidas ou tipo de usuário incorreto")
+
+
+class EmitirNotaFiscal(tk.Toplevel):
+    def __init__(self, parent, conn, cursor):
+        super().__init__(parent)
+        self.parent = parent
+        self.conn = conn
+        self.cursor = cursor
+        self.title("Emitir Nota Fiscal")
+        self.geometry("800x600")
+        
+        if not self.verificar_usuario_caixa():
+            messagebox.showerror("Acesso Negado", "Somente o caixa pode emitir notas fiscais")
+            self.destroy()
+            return
+            
+        self.criar_interface()
+        
+    def verificar_usuario_caixa(self):
+        return self.parent.tipo_usuario == "Caixa"
+        
+    def criar_interface(self):
+        main_frame = tk.Frame(self)
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        filter_frame = tk.LabelFrame(main_frame, text="Filtrar Notas Fiscais", padx=5, pady=5)
+        filter_frame.pack(fill="x", pady=(0, 10))
+        
+        tk.Label(filter_frame, text="Código da Venda:").grid(row=0, column=0, padx=5, pady=5)
+        self.cod_venda_entry = tk.Entry(filter_frame)
+        self.cod_venda_entry.grid(row=0, column=1, padx=5, pady=5)
+        
+        tk.Button(filter_frame, text="Buscar", command=self.buscar_notas).grid(row=0, column=2, padx=5, pady=5)
+        
+        columns = ["ID Nota", "Data Emissão", "Impostos", "CPF/CNPJ", "CNPJ Livraria", "Cód. Livro", "Cód. Venda", "ID Ordem"]
+        self.tree = ttk.Treeview(main_frame, columns=columns, show="headings", height=15)
+        
+        for col in columns:
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=100)
+            
+        self.tree.pack(fill="both", expand=True)
+        
+        tk.Button(main_frame, text="Emitir Nova Nota", command=self.emitir_nova_nota).pack(pady=5)
+        
+        
+    def buscar_notas(self):
+        cod_venda = self.cod_venda_entry.get()
+        if not cod_venda:
+            messagebox.showwarning("Aviso", "Digite um código de venda para buscar")
+            return
+
+        try:
+            #CONSULTA SEM JOIN
+            query = """
+            SELECT nota_fiscal.data_emissao, nota_fiscal.impostos, nota_fiscal.cpf, nota_fiscal.cnpj_livraria, nota_fiscal.cod_livro
+            FROM nota_fiscal, venda
+            WHERE nota_fiscal.cod_venda = venda.cod_venda;
+            """
+            self.cursor.execute(query, (cod_venda,))
+            notas = self.cursor.fetchall()
+
+            self.limpar_treeview()
+
+            if not notas:
+                messagebox.showinfo("Info", "Nenhuma nota fiscal encontrada para esta venda")
+                return
+
+            for nota in notas:
+                self.tree.insert("", "end", values=nota)
+
+        except mysql.connector.Error as e:
+            messagebox.showerror("Erro", f"Erro ao buscar notas fiscais: {e}")
+            
+    def limpar_treeview(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+            
+    def emitir_nova_nota(self):
+        nova_janela = tk.Toplevel(self)
+        nova_janela.title("Nova Nota Fiscal")
+        nova_janela.geometry("400x300")
+        
+        #Formulário
+        tk.Label(nova_janela, text="Código da Venda:").grid(row=0, column=0, padx=5, pady=5)
+        cod_venda_entry = tk.Entry(nova_janela)
+        cod_venda_entry.grid(row=0, column=1, padx=5, pady=5)
+        
+        tk.Label(nova_janela, text="Impostos:").grid(row=1, column=0, padx=5, pady=5)
+        impostos_entry = tk.Entry(nova_janela)
+        impostos_entry.grid(row=1, column=1, padx=5, pady=5)
+        
+        tk.Label(nova_janela, text="CPF/CNPJ:").grid(row=2, column=0, padx=5, pady=5)
+        cpf_cnpj_entry = tk.Entry(nova_janela)
+        cpf_cnpj_entry.grid(row=2, column=1, padx=5, pady=5)
+        
+        tk.Label(nova_janela, text="CNPJ Livraria:").grid(row=3, column=0, padx=5, pady=5)
+        cnpj_livraria_entry = tk.Entry(nova_janela)
+        cnpj_livraria_entry.grid(row=3, column=1, padx=5, pady=5)
+        
+        tk.Label(nova_janela, text="Código do Livro:").grid(row=4, column=0, padx=5, pady=5)
+        cod_livro_entry = tk.Entry(nova_janela)
+        cod_livro_entry.grid(row=4, column=1, padx=5, pady=5)
+        
+        tk.Label(nova_janela, text="ID Ordem:").grid(row=5, column=0, padx=5, pady=5)
+        id_ordern_entry = tk.Entry(nova_janela)
+        id_ordern_entry.grid(row=5, column=1, padx=5, pady=5)
+        
+        def salvar_nota():
+            try:
+                query = """
+                INSERT INTO notes (data_emissao, impostos, cpf_out_cnpj, cnpj_livraria, cod_livro, cod_venda, id_ordern)
+                VALUES (CURDATE(), %s, %s, %s, %s, %s, %s)
+                """
+                values = (
+                    float(impostos_entry.get()) if impostos_entry.get() else 0,
+                    cpf_cnpj_entry.get(),
+                    cnpj_livraria_entry.get(),
+                    int(cod_livro_entry.get()) if cod_livro_entry.get() else None,
+                    int(cod_venda_entry.get()) if cod_venda_entry.get() else None,
+                    int(id_ordern_entry.get()) if id_ordern_entry.get() else None
+                )
+                
+                self.cursor.execute(query, values)
+                self.conn.commit()
+                
+                messagebox.showinfo("Sucesso", "Nota fiscal emitida com sucesso")
+                nova_janela.destroy()
+                
+            except mysql.connector.Error as e:
+                messagebox.showerror("Erro", f"Erro ao emitir nota fiscal: {e}")
+                
+        tk.Button(nova_janela, text="Emitir Nota", command=salvar_nota).grid(row=6, column=0, columnspan=2, pady=10)
+
+
+#sistema principal
+class SistemaLivraria(tk.Tk):
+    def __init__(self, tipo_usuario):
+        super().__init__()
+        self.tipo_usuario = tipo_usuario
+        self.title(f"Sistema Livrarias Mandirituba - {tipo_usuario}")
+        self.geometry("1200x800")
+
+        self.menu_frame = tk.Frame(self)
+        self.menu_frame.pack(pady=20)
+
+        tk.Label(self.menu_frame, text=f"SELECIONE O MÓDULO ({tipo_usuario})", 
+                font=("Arial", 14)).pack(pady=10)
+
+        #dicionário de permissões
+            "Administrador": ["Clientes", "Livros", "Vendas", "Estoque", "Relatórios"],
+            "Estoquista": ["Livros", "Estoque"],
+            "Caixa": ["Clientes", "Vendas", "Notas Fiscais"]  # Adicionei "Notas Fiscais" aqui
+        }
+
+        for modulo in self.permissoes[tipo_usuario]:
+            tk.Button(self.menu_frame, text=modulo, width=20, 
+                     command=lambda m=modulo: self.mostrar_modulo(m)).pack(pady=5)
+
+        self.crud_clientes_frame = None
+        self.crud_livros_frame = None
+        self.crud_vendas_frame = None
+        self.crud_estoque_frame = None
+        self.relatorio_frame = None
+        self.notas_fiscais_frame = None
+
+        try:
+            self.conn = mysql.connector.connect(
+                host='localhost',
+                user='root',
+                password='Senh@2709',
+                database='bd'
+            )
+            self.cursor = self.conn.cursor()
+        except mysql.connector.Error as e:
+            messagebox.showerror("Erro de conexão", f"Erro ao conectar ao banco: {e}")
+            self.destroy()
+
+    def mostrar_modulo(self, modulo):
+        self.menu_frame.pack_forget()
+        self.esconder_todos_frames()
+        
+        if modulo == "Clientes":
+            if not self.crud_clientes_frame:
+                self.crud_clientes_frame = CrudClientes(self, self.conn, self.cursor)
+            self.crud_clientes_frame.pack(fill="both", expand=True)
+        elif modulo == "Livros":
+            if not self.crud_livros_frame:
+                self.crud_livros_frame = CrudLivros(self, self.conn, self.cursor)
+            self.crud_livros_frame.pack(fill="both", expand=True)
+        elif modulo == "Vendas":
+            if not self.crud_vendas_frame:
+                self.crud_vendas_frame = CrudVendas(self, self.conn, self.cursor)
+            self.crud_vendas_frame.pack(fill="both", expand=True)
+        elif modulo == "Estoque":
+            if not self.crud_estoque_frame:
+                self.crud_estoque_frame = CrudEstoque(self, self.conn, self.cursor)
+            self.crud_estoque_frame.pack(fill="both", expand=True)
+        elif modulo == "Relatórios":
+            if not self.relatorio_frame:
+                self.relatorio_frame = RelatorioApp(self, self.conn, self.cursor)
+            self.relatorio_frame.pack(fill="both", expand=True)
+        elif modulo == "Notas Fiscais":
+            self.mostrar_notas_fiscais()
+            
+    def mostrar_notas_fiscais(self):
+        self.esconder_todos_frames()
+        EmitirNotaFiscal(self, self.conn, self.cursor)
+        
+    def esconder_todos_frames(self):
+        for frame in [self.crud_clientes_frame, self.crud_livros_frame,
+                     self.crud_vendas_frame, self.crud_estoque_frame,
+                     self.relatorio_frame]:
+            if frame:
+                frame.pack_forget()
+
+    def voltar_menu(self):
+        self.esconder_todos_frames()
+        self.menu_frame.pack(pady=20)
+
+
+#CRUD de clientes
+class CrudClientes(tk.Frame):
+    def __init__(self, parent, conn, cursor):
+        super().__init__(parent)
+        self.parent = parent
+        self.conn = conn
+        self.cursor = cursor
+        self.configure(bg="#2e2e2e")
+
+        self.cpf_var = tk.StringVar()
+        self.nome_var = tk.StringVar()
+        self.nascimento_var = tk.StringVar()
+        self.telefone_var = tk.StringVar()
+        self.email_var = tk.StringVar()
+        self.cep_var = tk.StringVar()
+        self.numero_var = tk.StringVar()
+
+        self.criar_interface()
+        self.listar()
+
+    def criar_interface(self):
+        labels = ["CPF", "Nome", "Nascimento (AAAA-MM-DD)", "Telefone", "Email", "CEP", "Número"]
+        vars_ = [self.cpf_var, self.nome_var, self.nascimento_var, self.telefone_var,
+                 self.email_var, self.cep_var, self.numero_var]
+
+        for i, (label, var) in enumerate(zip(labels, vars_)):
+            tk.Label(self, text=label, fg="#dcdcdc", bg="#2e2e2e", font=("Arial", 10, "bold")).grid(row=i, column=0, padx=10, pady=5, sticky="e")
+            entry = tk.Entry(self, textvariable=var, bg="#444444", fg="#ffffff", insertbackground="#ffffff", width=40, relief="flat")
+            entry.grid(row=i, column=1, padx=10, pady=5, sticky="w")
+
+        def criar_botao(txt, cmd, linha):
+            return tk.Button(self, text=txt, command=cmd,
+                             bg="#a0a0a0", fg="black", activebackground="#909090",
+                             font=("Arial", 10, "bold"), relief="flat", width=15).grid(row=linha, column=2, padx=10, pady=5)
+
+        criar_botao("Inserir", self.inserir, 0)
+        criar_botao("Atualizar", self.atualizar, 1)
+        criar_botao("Deletar", self.deletar, 2)
+        criar_botao("Limpar", self.limpar, 3)
+
+        btn_voltar = tk.Button(self, text="Voltar ao Menu", command=self.parent.voltar_menu,
+                               bg="#a0a0a0", fg="black", activebackground="#909090",
+                               font=("Arial", 10, "bold"), relief="flat", width=15)
+        btn_voltar.grid(row=4, column=2, padx=10, pady=15)
+
+        cols = ["CPF", "Nome", "Nascimento", "Telefone", "Email", "CEP", "Número"]
+        self.tree = ttk.Treeview(self, columns=cols, show="headings", height=15)
+        for col in cols:
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=110)
+        self.tree.grid(row=8, column=0, columnspan=3, padx=10, pady=20)
+        self.tree.bind("<ButtonRelease-1>", self.selecionar)
+
+        estilo = ttk.Style()
+        estilo.theme_use("default")
+        estilo.configure("Treeview", background="#3c3c3c", foreground="#f0f0f0",
+                         fieldbackground="#3c3c3c", rowheight=25)
+        estilo.map('Treeview', background=[('selected', '#606060')])
+        estilo.configure("Treeview.Heading", background="#a0a0a0", foreground="black")
+
+    def inserir(self):
+        try:
+            self.cursor.execute("INSERT INTO cliente VALUES (%s, %s, %s, %s, %s, %s, %s)", (
+                self.cpf_var.get(),
+                self.nome_var.get(),
+                self.nascimento_var.get(),
+                self.telefone_var.get(),
+                self.email_var.get(),
+                self.cep_var.get(),
+                self.numero_var.get()
+            ))
+            self.conn.commit()
+            self.listar()
+            self.limpar()
+        except mysql.connector.Error as e:
+            messagebox.showerror("Erro", f"Erro ao inserir: {e}")
+
+    def atualizar(self):
+        try:
+            self.cursor.execute("""UPDATE cliente SET
+                nome_completo=%s, data_nascimento=%s, telefone=%s,
+                email=%s, cep=%s, numero=%s WHERE cpf=%s""", (
+                self.nome_var.get(), self.nascimento_var.get(), self.telefone_var.get(),
+                self.email_var.get(), self.cep_var.get(), self.numero_var.get(), self.cpf_var.get()
+            ))
+            self.conn.commit()
+            self.listar()
+            self.limpar()
+        except mysql.connector.Error as e:
+            messagebox.showerror("Erro", f"Erro ao atualizar: {e}")
+
+    def deletar(self):
+        try:
+            self.cursor.execute("DELETE FROM cliente WHERE cpf=%s", (self.cpf_var.get(),))
+            self.conn.commit()
+            self.listar()
+            self.limpar()
+        except mysql.connector.Error as e:
+            messagebox.showerror("Erro", f"Erro ao deletar: {e}")
+
+    def listar(self):
+        for row in self.tree.get_children():
+            self.tree.delete(row)
+        self.cursor.execute("SELECT * FROM cliente")
+        for row in self.cursor.fetchall():
+            self.tree.insert("", "end", values=row)
+
+    def selecionar(self, event):
+        selected = self.tree.focus()
+        if selected:
+            values = self.tree.item(selected, 'values')
+            self.cpf_var.set(values[0])
+            self.nome_var.set(values[1])
+            self.nascimento_var.set(values[2])
+            self.telefone_var.set(values[3])
+            self.email_var.set(values[4])
+            self.cep_var.set(values[5])
+            self.numero_var.set(values[6])
+
+    def limpar(self):
+        for var in (self.cpf_var, self.nome_var, self.nascimento_var, self.telefone_var,
+                    self.email_var, self.cep_var, self.numero_var):
+            var.set("")
+
+
+#CRUD de livros
+class CrudLivros(tk.Frame):
+    def __init__(self, parent, conn, cursor):
+        super().__init__(parent)
+        self.parent = parent
+        self.conn = conn
+        self.cursor = cursor
+        self.configure(bg="#2e2e2e")
+
+        self.cod_livro_var = tk.StringVar()
+        self.titulo_var = tk.StringVar()
+        self.autor_var = tk.StringVar()
+        self.editora_var = tk.StringVar()
+        self.edicao_var = tk.StringVar()
+        self.genero_var = tk.StringVar()
+        self.paginas_var = tk.StringVar()
+        self.preco_var = tk.StringVar()
+        self.isbn_var = tk.StringVar()
+        self.lote_var = tk.StringVar()
+
+        self.criar_interface()
+        self.listar()
+
+    def criar_interface(self):
+        labels = ["Código", "Título", "Autor", "Editora", "Edição", "Gênero",
+                 "Páginas", "Preço", "ISBN", "Lote"]
+        vars_ = [self.cod_livro_var, self.titulo_var, self.autor_var, self.editora_var,
+                self.edicao_var, self.genero_var, self.paginas_var, self.preco_var,
+                self.isbn_var, self.lote_var]
+
+        for i, (label, var) in enumerate(zip(labels, vars_)):
+            tk.Label(self, text=label, fg="#dcdcdc", bg="#2e2e2e", font=("Arial", 10, "bold")).grid(row=i, column=0, padx=10, pady=5, sticky="e")
+            entry = tk.Entry(self, textvariable=var, bg="#444444", fg="#ffffff", insertbackground="#ffffff", width=40, relief="flat")
+            entry.grid(row=i, column=1, padx=10, pady=5, sticky="w")
+
+        def criar_botao(txt, cmd, linha):
+            return tk.Button(self, text=txt, command=cmd,
+                             bg="#a0a0a0", fg="black", activebackground="#909090",
+                             font=("Arial", 10, "bold"), relief="flat", width=15).grid(row=linha, column=2, padx=10, pady=5)
+
+        criar_botao("Inserir", self.inserir, 0)
+        criar_botao("Atualizar", self.atualizar, 1)
+        criar_botao("Deletar", self.deletar, 2)
+        criar_botao("Limpar", self.limpar, 3)
+
+        btn_voltar = tk.Button(self, text="Voltar ao Menu", command=self.parent.voltar_menu,
+                               bg="#a0a0a0", fg="black", activebackground="#909090",
+                               font=("Arial", 10, "bold"), relief="flat", width=15)
+        btn_voltar.grid(row=4, column=2, padx=10, pady=15)
+
+        cols = ["Código", "Título", "Autor", "Editora", "Edição", "Gênero",
+               "Páginas", "Preço", "ISBN", "Lote"]
+        self.tree = ttk.Treeview(self, columns=cols, show="headings", height=15)
+        for col in cols:
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=100)
+        self.tree.grid(row=10, column=0, columnspan=3, padx=10, pady=20)
+        self.tree.bind("<ButtonRelease-1>", self.selecionar)
+
+        estilo = ttk.Style()
+        estilo.theme_use("default")
+        estilo.configure("Treeview", background="#3c3c3c", foreground="#f0f0f0",
+                         fieldbackground="#3c3c3c", rowheight=25)
+        estilo.map('Treeview', background=[('selected', '#606060')])
+        estilo.configure("Treeview.Heading", background="#a0a0a0", foreground="black")
+
+    def inserir(self):
+        try:
+            self.cursor.execute("""
+                INSERT INTO livro (titulo, autor, editora, edicao, genero, numero_paginas, preco, isbn, lote_caixa)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                self.titulo_var.get(),
+                self.autor_var.get(),
+                self.editora_var.get(),
+                int(self.edicao_var.get()) if self.edicao_var.get() else None,
+                self.genero_var.get(),
+                int(self.paginas_var.get()) if self.paginas_var.get() else None,
+                float(self.preco_var.get()) if self.preco_var.get() else None,
+                self.isbn_var.get(),
+                int(self.lote_var.get()) if self.lote_var.get() else None
+            ))
+            self.conn.commit()
+            self.listar()
+            self.limpar()
+        except mysql.connector.Error as e:
+            messagebox.showerror("Erro", f"Erro ao inserir: {e}")
+
+    def atualizar(self):
+        try:
+            self.cursor.execute("""
+                UPDATE livro SET
+                titulo=%s, autor=%s, editora=%s, edicao=%s, genero=%s,
+                numero_paginas=%s, preco=%s, isbn=%s, lote_caixa=%s
+                WHERE cod_livro=%s
+            """, (
+                self.titulo_var.get(),
+                self.autor_var.get(),
+                self.editora_var.get(),
+                int(self.edicao_var.get()) if self.edicao_var.get() else None,
+                self.genero_var.get(),
+                int(self.paginas_var.get()) if self.paginas_var.get() else None,
+                float(self.preco_var.get()) if self.preco_var.get() else None,
+                self.isbn_var.get(),
+                int(self.lote_var.get()) if self.lote_var.get() else None,
+                int(self.cod_livro_var.get())
+            ))
+            self.conn.commit()
+            self.listar()
+            self.limpar()
+        except mysql.connector.Error as e:
+            messagebox.showerror("Erro", f"Erro ao atualizar: {e}")
+
+    def deletar(self):
+        try:
+            self.cursor.execute("DELETE FROM livro WHERE cod_livro=%s", (int(self.cod_livro_var.get()),))
+            self.conn.commit()
+            self.listar()
+            self.limpar()
+        except mysql.connector.Error as e:
+            messagebox.showerror("Erro", f"Erro ao deletar: {e}")
+
+    def listar(self):
+        for row in self.tree.get_children():
+            self.tree.delete(row)
+        self.cursor.execute("SELECT * FROM livro")
+        for row in self.cursor.fetchall():
+            self.tree.insert("", "end", values=row)
+
+    def selecionar(self, event):
+        selected = self.tree.focus()
+        if selected:
+            values = self.tree.item(selected, 'values')
+            self.cod_livro_var.set(values[0])
+            self.titulo_var.set(values[1])
+            self.autor_var.set(values[2])
+            self.editora_var.set(values[3])
+            self.edicao_var.set(values[4] if values[4] else "")
+            self.genero_var.set(values[5] if values[5] else "")
+            self.paginas_var.set(values[6] if values[6] else "")
+            self.preco_var.set(values[7] if values[7] else "")
+            self.isbn_var.set(values[8] if values[8] else "")
+            self.lote_var.set(values[9] if values[9] else "")
+
+    def limpar(self):
+        for var in (self.cod_livro_var, self.titulo_var, self.autor_var, self.editora_var,
+                   self.edicao_var, self.genero_var, self.paginas_var, self.preco_var,
+                   self.isbn_var, self.lote_var):
+            var.set("")
+
+
+#CRUD de vendas
+class CrudVendas(tk.Frame):
+    def __init__(self, parent, conn, cursor):
+        super().__init__(parent)
+        self.parent = parent
+        self.conn = conn
+        self.cursor = cursor
+        self.configure(bg="#2e2e2e")
+
+        self.cod_venda_var = tk.StringVar()
+        self.valor_total_var = tk.StringVar()
+        self.data_venda_var = tk.StringVar()
+        self.forma_pagamento_var = tk.StringVar()
+        self.quantidade_var = tk.StringVar()
+        self.item_var = tk.StringVar()
+        self.cpf_cliente_var = tk.StringVar()
+        self.cod_livro_var = tk.StringVar()
+
+        self.carregar_clientes()
+        self.carregar_livros()
+
+        self.criar_interface()
+        self.listar()
+
+    def carregar_clientes(self):
+        self.cursor.execute("SELECT cpf, nome_completo FROM cliente")
+        self.clientes = {row[1]: row[0] for row in self.cursor.fetchall()}
+
+    def carregar_livros(self):
+        self.cursor.execute("SELECT cod_livro, titulo FROM livro")
+        self.livros = {row[1]: row[0] for row in self.cursor.fetchall()}
+
+    def criar_interface(self):
+        labels = ["Código Venda", "Valor Total", "Data (AAAA-MM-DD)", "Forma Pagamento",
+                 "Quantidade", "Item", "Cliente", "Livro"]
+        vars_ = [self.cod_venda_var, self.valor_total_var, self.data_venda_var,
+                self.forma_pagamento_var, self.quantidade_var, self.item_var,
+                self.cpf_cliente_var, self.cod_livro_var]
+
+        for i, (label, var) in enumerate(zip(labels, vars_)):
+            tk.Label(self, text=label, fg="#dcdcdc", bg="#2e2e2e", font=("Arial", 10, "bold")).grid(row=i, column=0, padx=10, pady=5, sticky="e")
+
+            if label == "Cliente":
+                self.cliente_combobox = ttk.Combobox(self, textvariable=var, values=list(self.clientes.keys()), width=37)
+                self.cliente_combobox.grid(row=i, column=1, padx=10, pady=5, sticky="w")
+            elif label == "Livro":
+                self.livro_combobox = ttk.Combobox(self, textvariable=var, values=list(self.livros.keys()), width=37)
+                self.livro_combobox.grid(row=i, column=1, padx=10, pady=5, sticky="w")
+            else:
+                entry = tk.Entry(self, textvariable=var, bg="#444444", fg="#ffffff", insertbackground="#ffffff", width=40, relief="flat")
+                entry.grid(row=i, column=1, padx=10, pady=5, sticky="w")
+
+        def criar_botao(txt, cmd, linha):
+            return tk.Button(self, text=txt, command=cmd,
+                             bg="#a0a0a0", fg="black", activebackground="#909090",
+                             font=("Arial", 10, "bold"), relief="flat", width=15).grid(row=linha, column=2, padx=10, pady=5)
+
+        criar_botao("Inserir", self.inserir, 0)
+        criar_botao("Atualizar", self.atualizar, 1)
+        criar_botao("Deletar", self.deletar, 2)
+        criar_botao("Limpar", self.limpar, 3)
+
+        btn_voltar = tk.Button(self, text="Voltar ao Menu", command=self.parent.voltar_menu,
+                               bg="#a0a0a0", fg="black", activebackground="#909090",
+                               font=("Arial", 10, "bold"), relief="flat", width=15)
+        btn_voltar.grid(row=4, column=2, padx=10, pady=15)
+
+        cols = ["Código", "Valor Total", "Data", "Pagamento", "Quantidade", "Item", "CPF Cliente", "Cód. Livro"]
+        self.tree = ttk.Treeview(self, columns=cols, show="headings", height=15)
+        for col in cols:
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=100)
+        self.tree.grid(row=8, column=0, columnspan=3, padx=10, pady=20)
+        self.tree.bind("<ButtonRelease-1>", self.selecionar)
+
+        estilo = ttk.Style()
+        estilo.theme_use("default")
+        estilo.configure("Treeview", background="#3c3c3c", foreground="#f0f0f0",
+                         fieldbackground="#3c3c3c", rowheight=25)
+        estilo.map('Treeview', background=[('selected', '#606060')])
+        estilo.configure("Treeview.Heading", background="#a0a0a0", foreground="black")
+
+    def inserir(self):
+        try:
+            cpf_cliente = self.clientes.get(self.cpf_cliente_var.get())
+            cod_livro = self.livros.get(self.cod_livro_var.get())
+
+            if not cpf_cliente or not cod_livro:
+                messagebox.showerror("Erro", "Selecione um cliente e um livro válidos")
+                return
+
+            self.cursor.execute("""
+                INSERT INTO venda (valor_total, data_venda, forma_pagamento, quantidade_vendida, item, cpf_cliente, cod_livro)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (
+                float(self.valor_total_var.get()),
+                            self.data_venda_var.get(),
+                self.forma_pagamento_var.get(),
+                int(self.quantidade_var.get()),
+                self.item_var.get(),
+                cpf_cliente,
+                cod_livro
+            ))
+            self.conn.commit()
+            self.listar()
+            self.limpar()
+        except mysql.connector.Error as e:
+            messagebox.showerror("Erro", f"Erro ao inserir venda: {e}")
+
+    def atualizar(self):
+        try:
+            cpf_cliente = self.clientes.get(self.cpf_cliente_var.get())
+            cod_livro = self.livros.get(self.cod_livro_var.get())
+
+            if not cpf_cliente or not cod_livro:
+                messagebox.showerror("Erro", "Selecione um cliente e um livro válidos")
+                return
+
+            self.cursor.execute("""
+                UPDATE venda SET
+                valor_total=%s, data_venda=%s, forma_pagamento=%s,
+                quantidade_vendida=%s, item=%s, cpf_cliente=%s, cod_livro=%s
+                WHERE cod_venda=%s
+            """, (
+                float(self.valor_total_var.get()),
+                self.data_venda_var.get(),
+                self.forma_pagamento_var.get(),
+                int(self.quantidade_var.get()),
+                self.item_var.get(),
+                cpf_cliente,
+                cod_livro,
+                int(self.cod_venda_var.get())
+            ))
+            self.conn.commit()
+            self.listar()
+            self.limpar()
+        except mysql.connector.Error as e:
+            messagebox.showerror("Erro", f"Erro ao atualizar venda: {e}")
+
+    def deletar(self):
+        try:
+            self.cursor.execute("DELETE FROM venda WHERE cod_venda=%s", (int(self.cod_venda_var.get()),))
+            self.conn.commit()
+            self.listar()
+            self.limpar()
+        except mysql.connector.Error as e:
+            messagebox.showerror("Erro", f"Erro ao deletar venda: {e}")
+
+    def listar(self):
+        for row in self.tree.get_children():
+            self.tree.delete(row)
+        self.cursor.execute("SELECT * FROM venda")
+        for row in self.cursor.fetchall():
+            self.tree.insert("", "end", values=row)
+
+    def selecionar(self, event):
+        selected = self.tree.focus()
+        if selected:
+            values = self.tree.item(selected, 'values')
+            self.cod_venda_var.set(values[0])
+            self.valor_total_var.set(values[1])
+            self.data_venda_var.set(values[2])
+            self.forma_pagamento_var.set(values[3])
+            self.quantidade_var.set(values[4])
+            self.item_var.set(values[5])
+            self.cursor.execute("SELECT nome_completo FROM cliente WHERE cpf=%s", (values[6],))
+            cliente = self.cursor.fetchone()
+            self.cpf_cliente_var.set(cliente[0] if cliente else "")
+            
+            self.cursor.execute("SELECT titulo FROM livro WHERE cod_livro=%s", (values[7],))
+            livro = self.cursor.fetchone()
+            self.cod_livro_var.set(livro[0] if livro else "")
+
+    def limpar(self):
+        for var in (self.cod_venda_var, self.valor_total_var, self.data_venda_var,
+                   self.forma_pagamento_var, self.quantidade_var, self.item_var,
+                   self.cpf_cliente_var, self.cod_livro_var):
+            var.set("")
+
+
+#CRUD de estoque
+class CrudEstoque(tk.Frame):
+    def __init__(self, parent, conn, cursor):
+        super().__init__(parent)
+        self.parent = parent
+        self.conn = conn
+        self.cursor = cursor
+        self.configure(bg="#2e2e2e")
+
+        self.id_estoque_var = tk.StringVar()
+        self.quantidade_var = tk.StringVar()
+        self.data_entrada_var = tk.StringVar()
+        self.data_saida_var = tk.StringVar()
+        self.cod_livro_var = tk.StringVar()
+
+        self.carregar_livros()
+        self.criar_interface()
+        self.listar()
+
+    def carregar_livros(self):
+        self.cursor.execute("SELECT cod_livro, titulo FROM livro")
+        self.livros = {row[1]: row[0] for row in self.cursor.fetchall()}
+
+    def criar_interface(self):
+        labels = ["ID Estoque", "Quantidade", "Data Entrada (AAAA-MM-DD)", 
+                 "Data Saída (AAAA-MM-DD)", "Livro"]
+        vars_ = [self.id_estoque_var, self.quantidade_var, self.data_entrada_var,
+                self.data_saida_var, self.cod_livro_var]
+
+        for i, (label, var) in enumerate(zip(labels, vars_)):
+            tk.Label(self, text=label, fg="#dcdcdc", bg="#2e2e2e", font=("Arial", 10, "bold")).grid(row=i, column=0, padx=10, pady=5, sticky="e")
+
+            if label == "Livro":
+                self.livro_combobox = ttk.Combobox(self, textvariable=var, values=list(self.livros.keys()), width=37)
+                self.livro_combobox.grid(row=i, column=1, padx=10, pady=5, sticky="w")
+            else:
+                entry = tk.Entry(self, textvariable=var, bg="#444444", fg="#ffffff", insertbackground="#ffffff", width=40, relief="flat")
+                entry.grid(row=i, column=1, padx=10, pady=5, sticky="w")
+
+        def criar_botao(txt, cmd, linha):
+            return tk.Button(self, text=txt, command=cmd,
+                             bg="#a0a0a0", fg="black", activebackground="#909090",
+                             font=("Arial", 10, "bold"), relief="flat", width=15).grid(row=linha, column=2, padx=10, pady=5)
+
+        criar_botao("Inserir", self.inserir, 0)
+        criar_botao("Atualizar", self.atualizar, 1)
+        criar_botao("Deletar", self.deletar, 2)
+        criar_botao("Limpar", self.limpar, 3)
+
+        btn_voltar = tk.Button(self, text="Voltar ao Menu", command=self.parent.voltar_menu,
+                               bg="#a0a0a0", fg="black", activebackground="#909090",
+                               font=("Arial", 10, "bold"), relief="flat", width=15)
+        btn_voltar.grid(row=4, column=2, padx=10, pady=15)
+
+        cols = ["ID Estoque", "Quantidade", "Data Entrada", "Data Saída", "Cód. Livro"]
+        self.tree = ttk.Treeview(self, columns=cols, show="headings", height=15)
+        for col in cols:
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=120)
+        self.tree.grid(row=5, column=0, columnspan=3, padx=10, pady=20)
+        self.tree.bind("<ButtonRelease-1>", self.selecionar)
+
+        estilo = ttk.Style()
+        estilo.theme_use("default")
+        estilo.configure("Treeview", background="#3c3c3c", foreground="#f0f0f0",
+                         fieldbackground="#3c3c3c", rowheight=25)
+        estilo.map('Treeview', background=[('selected', '#606060')])
+        estilo.configure("Treeview.Heading", background="#a0a0a0", foreground="black")
+
+    def inserir(self):
+        try:
+            cod_livro = self.livros.get(self.cod_livro_var.get())
+
+            if not cod_livro:
+                messagebox.showerror("Erro", "Selecione um livro válido")
+                return
+
+            self.cursor.execute("""
+                INSERT INTO estoque (quantidade, data_entrada, data_saida, cod_livro)
+                VALUES (%s, %s, %s, %s)
+            """, (
+                int(self.quantidade_var.get()),
+                self.data_entrada_var.get(),
+                self.data_saida_var.get() if self.data_saida_var.get() else None,
+                cod_livro
+            ))
+            self.conn.commit()
+            self.listar()
+            self.limpar()
+        except mysql.connector.Error as e:
+            messagebox.showerror("Erro", f"Erro ao inserir no estoque: {e}")
+
+    def atualizar(self):
+        try:
+            cod_livro = self.livros.get(self.cod_livro_var.get())
+
+            if not cod_livro:
+                messagebox.showerror("Erro", "Selecione um livro válido")
+                return
+
+            self.cursor.execute("""
+                UPDATE estoque SET
+                quantidade=%s, data_entrada=%s, data_saida=%s, cod_livro=%s
+                WHERE id_estoque=%s
+            """, (
+                int(self.quantidade_var.get()),
+                self.data_entrada_var.get(),
+                self.data_saida_var.get() if self.data_saida_var.get() else None,
+                cod_livro,
+                int(self.id_estoque_var.get())
+            ))
+            self.conn.commit()
+            self.listar()
+            self.limpar()
+        except mysql.connector.Error as e:
+            messagebox.showerror("Erro", f"Erro ao atualizar estoque: {e}")
+
+    def deletar(self):
+        try:
+            self.cursor.execute("DELETE FROM estoque WHERE id_estoque=%s", (int(self.id_estoque_var.get()),))
+            self.conn.commit()
+            self.listar()
+            self.limpar()
+        except mysql.connector.Error as e:
+            messagebox.showerror("Erro", f"Erro ao deletar do estoque: {e}")
+
+    def listar(self):
+        for row in self.tree.get_children():
+            self.tree.delete(row)
+        self.cursor.execute("SELECT * FROM estoque")
+        for row in self.cursor.fetchall():
+            self.tree.insert("", "end", values=row)
+
+    def selecionar(self, event):
+        selected = self.tree.focus()
+        if selected:
+            values = self.tree.item(selected, 'values')
+            self.id_estoque_var.set(values[0])
+            self.quantidade_var.set(values[1])
+            self.data_entrada_var.set(values[2])
+            self.data_saida_var.set(values[3] if values[3] else "")
+            self.cursor.execute("SELECT titulo FROM livro WHERE cod_livro=%s", (values[4],))
+            livro = self.cursor.fetchone()
+            self.cod_livro_var.set(livro[0] if livro else "")
+
+    def limpar(self):
+        for var in (self.id_estoque_var, self.quantidade_var, self.data_entrada_var,
+                   self.data_saida_var, self.cod_livro_var):
+            var.set("")
+
+
+#RELATORIOS
+class RelatorioApp(tk.Frame):
+    def __init__(self, parent, conn, cursor):
+        super().__init__(parent)
+        self.parent = parent
+        self.conn = conn
+        self.cursor = cursor
+        self.configure(bg="#2e2e2e")
+
+        self.criar_interface()
+
+    def criar_interface(self):
+        main_frame = tk.Frame(self, bg="#2e2e2e")
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        report_frame = tk.LabelFrame(main_frame, text="Selecione o Relatório", 
+                                    bg="#2e2e2e", fg="#dcdcdc", padx=5, pady=5)
+        report_frame.pack(fill="x", pady=(0, 10))
+
+        #Opções relatorio
+        relatorios = [
+            "Vendas por Período",
+            "Livros Mais Vendidos",
+            "Clientes que Mais Compram",
+            "Estoque Baixo",
+            "Faturamento Mensal"
+        ]
+
+        for i, relatorio in enumerate(relatorios):
+            tk.Button(report_frame, text=relatorio, width=25,
+                      command=lambda r=relatorio: self.gerar_relatorio(r),
+                      bg="#a0a0a0", fg="black", font=("Arial", 10, "bold")).grid(
+                      row=i//3, column=i%3, padx=5, pady=5)
+
+        filter_frame = tk.LabelFrame(main_frame, text="Filtros", 
+                                   bg="#2e2e2e", fg="#dcdcdc", padx=5, pady=5)
+        filter_frame.pack(fill="x", pady=(0, 10))
+
+        tk.Label(filter_frame, text="Data Inicial:", bg="#2e2e2e", fg="#dcdcdc").grid(row=0, column=0, padx=5, pady=5)
+        self.data_inicial = tk.Entry(filter_frame, width=15)
+        self.data_inicial.grid(row=0, column=1, padx=5, pady=5)
+        self.data_inicial.insert(0, "2023-01-01")
+
+        tk.Label(filter_frame, text="Data Final:", bg="#2e2e2e", fg="#dcdcdc").grid(row=0, column=2, padx=5, pady=5)
+        self.data_final = tk.Entry(filter_frame, width=15)
+        self.data_final.grid(row=0, column=3, padx=5, pady=5)
+        self.data_final.insert(0, "2023-12-31")
+
+        self.report_text = tk.Text(main_frame, bg="#444444", fg="#ffffff", 
+                                 wrap=tk.WORD, width=100, height=20)
+        self.report_text.pack(fill="both", expand=True, pady=(0, 10))
+
+        tk.Button(main_frame, text="Voltar ao Menu", command=self.parent.voltar_menu,
+                 bg="#a0a0a0", fg="black", font=("Arial", 10, "bold")).pack(pady=5)
+
+    def gerar_relatorio(self, tipo):
+        try:
+            data_inicial = self.data_inicial.get()
+            data_final = self.data_final.get()
+
+            if tipo == "Vendas por Período":
+                self.relatorio_vendas_periodo(data_inicial, data_final)
+            elif tipo == "Livros Mais Vendidos":
+                self.relatorio_livros_mais_vendidos(data_inicial, data_final)
+            elif tipo == "Clientes que Mais Compram":
+                self.relatorio_clientes_mais_compram(data_inicial, data_final)
+            elif tipo == "Estoque Baixo":
+                self.relatorio_estoque_baixo()
+            elif tipo == "Faturamento Mensal":
+                self.relatorio_faturamento_mensal(data_inicial, data_final)
+
+        except mysql.connector.Error as e:
+            messagebox.showerror("Erro", f"Erro ao gerar relatório: {e}")
+
+    def relatorio_vendas_periodo(self, data_inicial, data_final):
+        query = """
+        SELECT v.cod_venda, v.data_venda, v.valor_total, c.nome_completo, l.titulo
+        FROM venda v
+        JOIN cliente c ON v.cpf_cliente = c.cpf
+        JOIN livro l ON v.cod_livro = l.cod_livro
+        WHERE v.data_venda BETWEEN %s AND %s
+        ORDER BY v.data_venda
+        """
+        self.cursor.execute(query, (data_inicial, data_final))
+        vendas = self.cursor.fetchall()
+
+        total = sum(venda[2] for venda in vendas)
+
+        self.report_text.delete(1.0, tk.END)
+        self.report_text.insert(tk.END, f"RELATÓRIO DE VENDAS - {data_inicial} a {data_final}\n\n")
+        self.report_text.insert(tk.END, f"{'Código':<10}{'Data':<15}{'Valor':<15}{'Cliente':<30}{'Livro'}\n")
+        self.report_text.insert(tk.END, "-"*80 + "\n")
+
+        for venda in vendas:
+            self.report_text.insert(tk.END, f"{venda[0]:<10}{venda[1]:<15}R${venda[2]:<14.2f}{venda[3][:28]:<30}{venda[4][:30]}\n")
+
+        self.report_text.insert(tk.END, "\n" + "-"*80 + "\n")
+        self.report_text.insert(tk.END, f"TOTAL DE VENDAS: R${total:.2f}\n")
+        self.report_text.insert(tk.END, f"QUANTIDADE DE VENDAS: {len(vendas)}\n")
+
+    def relatorio_livros_mais_vendidos(self, data_inicial, data_final):
+        query = """
+        SELECT l.titulo, SUM(v.quantidade_vendida) as total_vendido, SUM(v.valor_total) as total_valor
+        FROM venda v
+        JOIN livro l ON v.cod_livro = l.cod_livro
+        WHERE v.data_venda BETWEEN %s AND %s
+        GROUP BY l.titulo
+        ORDER BY total_vendido DESC
+        LIMIT 10
+        """
+        self.cursor.execute(query, (data_inicial, data_final))
+        livros = self.cursor.fetchall()
+
+        self.report_text.delete(1.0, tk.END)
+        self.report_text.insert(tk.END, f"LIVROS MAIS VENDIDOS - {data_inicial} a {data_final}\n\n")
+        self.report_text.insert(tk.END, f"{'Posição':<10}{'Livro':<50}{'Quantidade':<15}{'Valor Total'}\n")
+        self.report_text.insert(tk.END, "-"*80 + "\n")
+
+        for i, livro in enumerate(livros, 1):
+            self.report_text.insert(tk.END, f"{i:<10}{livro[0][:48]:<50}{livro[1]:<15}{livro[2]:.2f}\n")
+
+    def relatorio_clientes_mais_compram(self, data_inicial, data_final):
+        query = """
+        SELECT c.nome_completo, COUNT(v.cod_venda) as total_compras, SUM(v.valor_total) as total_gasto
+        FROM venda v
+        JOIN cliente c ON v.cpf_cliente = c.cpf
+        WHERE v.data_venda BETWEEN %s AND %s
+        GROUP BY c.nome_completo
+        ORDER BY total_gasto DESC
+        LIMIT 10
+        """
+        self.cursor.execute(query, (data_inicial, data_final))
+        clientes = self.cursor.fetchall()
+
+        self.report_text.delete(1.0, tk.END)
+        self.report_text.insert(tk.END, f"CLIENTES QUE MAIS COMPRAM - {data_inicial} a {data_final}\n\n")
+        self.report_text.insert(tk.END, f"{'Posição':<10}{'Cliente':<50}{'Compras':<15}{'Total Gasto'}\n")
+        self.report_text.insert(tk.END, "-"*80 + "\n")
+
+        for i, cliente in enumerate(clientes, 1):
+            self.report_text.insert(tk.END, f"{i:<10}{cliente[0][:48]:<50}{cliente[1]:<15}R${cliente[2]:.2f}\n")
+
+    def relatorio_estoque_baixo(self):
+        query = """
+        SELECT l.titulo, e.quantidade, l.preco
+        FROM estoque e
+        JOIN livro l ON e.cod_livro = l.cod_livro
+        WHERE e.quantidade < 10
+        ORDER BY e.quantidade
+        """
+        self.cursor.execute(query)
+        estoque = self.cursor.fetchall()
+
+        self.report_text.delete(1.0, tk.END)
+        self.report_text.insert(tk.END, "ESTOQUE BAIXO (MENOS DE 10 UNIDADES)\n\n")
+        self.report_text.insert(tk.END, f"{'Livro':<50}{'Quantidade':<15}{'Preço Unitário'}\n")
+        self.report_text.insert(tk.END, "-"*80 + "\n")
+
+        for item in estoque:
+            self.report_text.insert(tk.END, f"{item[0][:48]:<50}{item[1]:<15}R${item[2]:.2f}\n")
+
+    def relatorio_faturamento_mensal(self, data_inicial, data_final):
+        query = """
+        SELECT DATE_FORMAT(data_venda, '%Y-%m') as mes, SUM(valor_total) as total
+        FROM venda
+        WHERE data_venda BETWEEN %s AND %s
+        GROUP BY mes
+        ORDER BY mes
+        """
+        self.cursor.execute(query, (data_inicial, data_final))
+        meses = self.cursor.fetchall()
+
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.bar([mes[0] for mes in meses], [mes[1] for mes in meses])
+        ax.set_title("Faturamento Mensal")
+        ax.set_xlabel("Mês")
+        ax.set_ylabel("Valor (R$)")
+
+        canvas = FigureCanvasTkAgg(fig, master=self)
+        canvas.draw()
+        canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        self.report_text.delete(1.0, tk.END)
+        self.report_text.insert(tk.END, "FATURAMENTO MENSAL\n\n")
+        self.report_text.insert(tk.END, f"{'Mês':<15}{'Faturamento'}\n")
+        self.report_text.insert(tk.END, "-"*80 + "\n")
+
+        total = 0
+        for mes in meses:
+            self.report_text.insert(tk.END, f"{mes[0]:<15}R${mes[1]:.2f}\n")
+            total += mes[1]
+
+        self.report_text.insert(tk.END, "\n" + "-"*80 + "\n")
+        self.report_text.insert(tk.END, f"TOTAL: R${total:.2f}\n")
+
+if __name__ == "__main__":
+    login = TelaLogin()
+    login.mainloop()
