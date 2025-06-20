@@ -193,10 +193,11 @@ class SistemaLivraria(tk.Tk):
         tk.Label(self.menu_frame, text=f"SELECIONE O MÓDULO ({tipo_usuario})", 
                 font=("Arial", 14)).pack(pady=10)
 
-        #dicionário de permissões
+        # dicionário de permissões
+        self.permissoes = {
             "Administrador": ["Clientes", "Livros", "Vendas", "Estoque", "Relatórios"],
             "Estoquista": ["Livros", "Estoque"],
-            "Caixa": ["Clientes", "Vendas", "Notas Fiscais"]  # Adicionei "Notas Fiscais" aqui
+            "Caixa": ["Clientes", "Vendas", "Notas Fiscais"]
         }
 
         for modulo in self.permissoes[tipo_usuario]:
@@ -215,7 +216,7 @@ class SistemaLivraria(tk.Tk):
                 host='localhost',
                 user='root',
                 password='Senh@2709',
-                database='bd'
+                database='bancodedados'
             )
             self.cursor = self.conn.cursor()
         except mysql.connector.Error as e:
